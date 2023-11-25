@@ -6,6 +6,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "cv_bridge/cv_bridge.h"
+#include <signal.h>
 
 class CSICameraPublisher : public rclcpp::Node {
 public:
@@ -33,15 +34,16 @@ public:
         captureAndPublish();
     }
 
-  ~CSICameraPublisher() {
-
+  void release() {
     if(camera_0_.isOpened()) {
-        camera_0_.release();
+      camera_0_.release();
+    }
+    if(num_cameras_ > 1){
+      if(camera_0_.isOpened()) {
+        camera_1_.release();
+      }
     }
 
-    if(num_cameras_ > 1 && camera_1_.isOpened()){
-      camera_1_.release();
-    }
   }
 
 private:
@@ -100,9 +102,14 @@ private:
               }
             }
 
+            if(!rclcpp::ok()) {
+              release();
+            }
             // Sleep for a while to control the publishing rate
             rclcpp::sleep_for(std::chrono::milliseconds(33));
         }
+        release();
+        
     }
 
     int num_cameras_;
@@ -117,11 +124,9 @@ private:
 
 int main(int argc, char** argv) {
     rclcpp::init(argc, argv);
-
     auto node = std::make_shared<CSICameraPublisher>();
-
     rclcpp::spin(node);
-
+    node->release();
     rclcpp::shutdown();
 
     return 0;

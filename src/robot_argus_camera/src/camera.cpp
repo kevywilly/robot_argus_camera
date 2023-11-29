@@ -8,6 +8,54 @@
 #include "cv_bridge/cv_bridge.h"
 #include <signal.h>
 
+/***
+# oST version 5.0 parameters
+[image]
+
+width
+1280
+
+height
+720
+
+[camera]
+
+camera matrix
+647.876881 0.000000 639.902919
+0.000000 485.764373 352.857511
+0.000000 0.000000 1.000000
+
+distortion
+-0.281166 0.057563 0.003871 0.003425 0.000000
+
+rectification
+1.000000 0.000000 0.000000
+0.000000 1.000000 0.000000
+0.000000 0.000000 1.000000
+
+projection
+452.509735 0.000000 648.408514 0.000000
+0.000000 389.708099 355.531485 0.000000
+0.000000 0.000000 1.000000 0.000000
+ * 
+*/
+
+#define UNDISTORT 0
+
+cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) <<
+        647.876881, 0, 639.902919,
+        0, 485.764373, 352.857511,
+        0, 0, 1.00);
+
+cv::Mat distortionCoefficients = (cv::Mat_<double>(1, 5) << -0.281166, 0.057563, 0.003871, 0.003425, 0.000000);
+
+cv::Mat rectificationMatrix = cv::Mat::eye(3, 3, CV_64F); // Assuming no rectification
+
+cv::Mat projectionMatrix = (cv::Mat_<double>(3, 4) <<
+    452.509735, 0, 648.408514, 0,
+    0, 389.708099, 355.531485, 0,
+    0, 0, 1.0, 0);
+
 class CSICameraPublisher : public rclcpp::Node {
 public:
     CSICameraPublisher()
@@ -69,6 +117,10 @@ private:
         return true;
     }
 
+    void undistortImage(cv::Mat img, cv::Mat &undistortedImage) {
+      cv::undistort(img, undistortedImage, cameraMatrix, distortionCoefficients, rectificationMatrix);
+      
+    }
     void captureAndPublish() {
         // Main loop to capture and publish images
         while (rclcpp::ok()) {
@@ -78,7 +130,16 @@ private:
                 // Convert OpenCV image to ROS2 sensor message
                 cv::Mat dst_0;
                 cv::cvtColor(frame_0, dst_0, cv::COLOR_YUV2BGR_I420);
-                auto img_msg_0 = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", dst_0).toImageMsg();
+
+                std::shared_ptr<sensor_msgs::msg::Image> img_msg_0;
+
+                if(UNDISTORT) {
+                  cv::Mat undistorted;
+                  cv::undistort(dst_0, undistorted, cameraMatrix, distortionCoefficients, cv::noArray());
+                  img_msg_0 = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", undistorted).toImageMsg();
+                } else {
+                  img_msg_0 = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", dst_0).toImageMsg();
+                }
 
                 // Publish the image
                 if(num_cameras_ > 1) {
@@ -95,10 +156,18 @@ private:
                   // Convert OpenCV image to ROS2 sensor message
                   cv::Mat dst_1;
                   cv::cvtColor(frame_1, dst_1, cv::COLOR_YUV2BGR_I420);
-                  auto img_msg_1 = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", dst_1).toImageMsg();
+                  std::shared_ptr<sensor_msgs::msg::Image> img_msg_1;
                   
-                  // Publish the image
-                  left_image_publisher_->publish(*img_msg_1);
+                  if(UNDISTORT) {
+                    cv::Mat undistorted_1;
+                    cv::undistort(dst_1, undistorted_1, cameraMatrix, distortionCoefficients, cv::noArray());
+                    img_msg_1 = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", undistorted_1).toImageMsg();
+                  } else {
+                    img_msg_1 = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", dst_1).toImageMsg();
+                  }
+                    // Publish the image
+                    left_image_publisher_->publish(*img_msg_1);
+                  
               }
             }
 
